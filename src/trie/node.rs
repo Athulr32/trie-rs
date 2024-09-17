@@ -1,10 +1,12 @@
+use crate::rlp::{self, encoder_buffer::EMPTY_STRING, rlp_encoder::RlpEncoder};
+
 #[derive(Clone)]
 pub enum Node {
     FullNode(FullNode),
     ShortNode(ShortNode),
     HashNode(HashNode),
     ValueNode(ValueNode),
-    Empty
+    Empty,
 }
 
 static INDICES: &[&str] = &[
@@ -27,7 +29,7 @@ pub type HashNode = Vec<u8>;
 
 pub type ValueNode = Vec<u8>;
 
-#[derive(Clone,Default)]
+#[derive(Clone, Default)]
 pub struct FullNode {
     pub children: Vec<Node>,
     pub flags: NodeFlag,
@@ -38,7 +40,7 @@ pub struct FullNode {
 // in the same cache fields).
 type RawNode = Vec<u8>;
 
-#[derive(Clone,Default)]
+#[derive(Clone, Default)]
 // nodeFlag contains caching-related metadata about a node.
 pub struct NodeFlag {
     pub hash: Option<HashNode>, // cached hash of the node (may be nil)
@@ -49,6 +51,7 @@ impl FullNode {
     pub fn cache(&self) -> (Option<HashNode>, bool) {
         (self.flags.hash.clone(), self.flags.dirty)
     }
+
 }
 
 impl ShortNode {
