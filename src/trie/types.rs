@@ -16,7 +16,6 @@ pub struct Tracer {
     access_list: HashMap<String, Vec<u8>>,
 }
 
-
 pub trait Reader {
     // Define the methods that the Reader trait should have
     // For example:
@@ -38,11 +37,10 @@ pub trait Database {
     fn reader(&self, state_root: &Hash) -> Result<Box<dyn Reader>, std::io::Error>;
 }
 
-
 #[derive(Debug)]
 pub struct MissingNodeError {
-   pub owner: Hash,
-   pub node_hash: Hash,
+    pub owner: Hash,
+    pub node_hash: Hash,
     pub err: Box<dyn std::error::Error>,
 }
 

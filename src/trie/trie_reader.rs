@@ -2,16 +2,13 @@ use std::collections::HashMap;
 
 use super::types::{Hash, MissingNodeError, Reader};
 
-
 pub struct TrieReader {
     pub owner: Hash,
     pub reader: Option<Box<dyn Reader>>,
     pub banned: HashMap<String, ()>,
 }
 
-
-
-impl TrieReader{
+impl TrieReader {
     // pub fn node(&self,path :Vec<u8>, hash : Hash)-> Result<Vec<u8>> {
     //     // Perform the logics in tests for preventing trie node access.
     //     if self.banned != None {
@@ -28,5 +25,4 @@ impl TrieReader{
     //     }
     //     return blob, nil
     // }
-    
 }

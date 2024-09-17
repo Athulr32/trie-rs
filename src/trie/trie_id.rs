@@ -6,7 +6,7 @@ use crate::trie::types::Hash;
 pub fn trie_id(root: Hash) -> Id {
     Id {
         state_root: root,
-        owner: [0;HASH_LENGTH],
+        owner: [0; HASH_LENGTH],
         root,
     }
 }
