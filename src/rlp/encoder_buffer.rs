@@ -1,10 +1,10 @@
+use std::io::Read;
+
+use super::encode::Listhead;
+
 pub const EMPTY_STRING: [u8; 1] = [0x80];
 
-pub struct Listhead {
-    pub offset: usize, // index of this header in string data
-    pub size: usize,   // total size of encoded data (including list headers)
-}
-
+#[derive(Default,Clone)]
 pub struct RlpBuffer {
     pub str: Vec<u8>,          // string data, contains everything except list headers
     pub lheads: Vec<Listhead>, // all list headers
@@ -26,7 +26,7 @@ impl RlpBuffer {
         let size = self.size();
         let lh = &mut self.lheads[index];
 
-        lh.size = size - lh.offset - lh.size;
+        lh.size = size - lh.offset as usize - lh.size;
 
         if lh.size < 56 {
             self.lhsize += 1; // length encoded into kind tag
@@ -62,5 +62,25 @@ impl RlpBuffer {
 
     pub fn encode_string_header(&self, size: usize) {
         unimplemented!()
+    }
+
+    pub fn copy_to(&self, dst: &mut Vec<u8>) {
+        let mut strpos = 0;
+        let mut pos = 0;
+
+        for head in &self.lheads {
+            let src = &self.str[strpos..head.offset as usize];
+            dst[pos..].clone_from_slice(src);
+            let count = dst.len().min(src.len());
+            pos += count;
+            strpos += count;
+
+            //write header
+            let enc = head.encode(&dst[pos..]);
+            pos += enc.len();
+        }
+        // copy string data after the last list header
+        let src = &self.str[strpos..];
+        dst[pos..].copy_from_slice(src);
     }
 }

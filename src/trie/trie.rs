@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use super::{
     encoding::prefix_len,
+    hash::Hasher,
     node::{FullNode, HashNode, Node, NodeFlag, ShortNode},
     trie_id::trie_id,
     trie_reader::TrieReader,
@@ -297,6 +298,14 @@ impl Trie {
         Err(())
     }
 
+    pub fn resolve(&mut self, node: Node, prefix: Option<Vec<u8>>) -> Result<Node, std::io::Error> {
+        if let Node::HashNode(v) = &node {
+            return self.resolve_and_track(v.to_vec(), prefix);
+        }
+
+        Ok(node)
+    }
+
     fn resolve_and_track(
         &mut self,
         hashNode: HashNode,
@@ -312,6 +321,33 @@ impl Trie {
             dirty: true,
             hash: None,
         };
+    }
+
+    /// Calculates the root hash of the given trie.
+    fn hash_root(&self) -> (Node, Option<Node>) {
+        if self.root.is_none() {
+            return (Node::HashNode(Vec::new()), None);
+        }
+
+        let mut hasher = Hasher::new();
+        let (hashed, cached) = hasher.hash(&self.root.clone().unwrap(), true);
+
+        (hashed, Some(cached))
+    }
+
+    /// Returns the root hash of the trie.
+    ///
+    /// This method does not write to the database and can be used even if the trie
+    /// doesn't have an associated database.
+    pub fn hash(&mut self) -> Hash {
+        let (hashed, cached) = self.hash_root();
+        self.root = cached;
+        let mut hash: Hash = [0; HASH_LENGTH];
+        if let Node::HashNode(v) = hashed {
+            hash.copy_from_slice(&v[..HASH_LENGTH]);
+        }
+
+        hash
     }
 }
 

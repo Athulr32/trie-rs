@@ -1,13 +1,38 @@
+use std::io::Write;
+
 use crate::{rlp::rlp_encoder::RlpEncoder, trie::encoding::hex_to_compact};
 
 use super::node::{self, FullNode, HashNode, Node, ShortNode};
-
+use sha3::{self, Digest, Sha3_256};
 pub struct Hasher {
     rlp_enc: RlpEncoder,
+    temp: Vec<u8>,
 }
 
 impl Hasher {
-    pub fn hash(&self, node: &Node, force: bool) -> (Node, Node) {
+    pub fn new() -> Self {
+        Self {
+            rlp_enc: RlpEncoder {
+                ..Default::default()
+            },
+            temp: Vec::new(),
+        }
+    }
+
+    /// Collapses a node into a hash node and prepares its replacement.
+    ///
+    /// This function performs two main operations:
+    /// 1. It collapses the input node into a hash representation.
+    /// 2. It creates a copy of the original node, but initialized with the computed hash.
+    ///
+    /// The purpose is to optimize the trie structure by replacing large nodes with their
+    /// hash representations while maintaining the ability to reconstruct the original node.
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - A reference to the node to be collapsed. The exact type depends on your trie implementation.
+    ///
+    pub fn hash(&mut self, node: &Node, force: bool) -> (Node, Node) {
         match node {
             Node::FullNode(n) => {
                 let (collapsed, mut cached) = self.hash_full_node_children(&n);
@@ -36,7 +61,7 @@ impl Hasher {
         }
     }
 
-    pub fn hash_full_node_children(&self, node: &FullNode) -> (FullNode, FullNode) {
+    pub fn hash_full_node_children(&mut self, node: &FullNode) -> (FullNode, FullNode) {
         let mut collapsed = node.clone();
         let mut cached = node.clone();
 
@@ -54,7 +79,11 @@ impl Hasher {
         (collapsed, cached)
     }
 
-    pub fn hash_short_node_children(&self, node: &ShortNode) -> (ShortNode, ShortNode) {
+    /// Collapses the short node.
+    ///
+    /// # Important
+    /// The returned collapsed node holds a live reference to the Key, and must not be modified.
+    pub fn hash_short_node_children(&mut self, node: &ShortNode) -> (ShortNode, ShortNode) {
         let mut collapsed = node.clone();
         let mut cached = node.clone();
 
@@ -73,11 +102,84 @@ impl Hasher {
         (collapsed, cached)
     }
 
-    pub fn short_node_to_hash(&self, node: &ShortNode, force: bool) -> Node {
-        unimplemented!()
+    /// Creates a `HashNode` from a `ShortNode`. The supplied `ShortNode`
+    /// should have a hex-type key, which will be converted (without modification)
+    /// into compact form for RLP encoding.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(HashNode)` if the RLP data is 32 bytes or larger.
+    /// - `None` if the RLP data is smaller than 32 bytes.
+    pub fn short_node_to_hash(&mut self, node: &ShortNode, force: bool) -> Node {
+        node.encode(&mut self.rlp_enc);
+        let enc = self.encode_bytes();
+
+        if self.temp.len() > 32 && !force {
+            return Node::ShortNode(node.clone());
+        }
+
+        Node::HashNode(self.hash_data(&self.temp))
     }
 
-    pub fn full_node_to_hash(&self, node: &FullNode, force: bool) -> Node {
-        unimplemented!()
+    /// Creates a `HashNode` from a `FullNode`.
+    ///
+    /// This function converts a `FullNode` into its hash representation. The input
+    /// `FullNode` may contain `None` values in its children, which is valid and will
+    /// be handled appropriately during the conversion process.
+    ///
+    /// # Arguments
+    ///
+    /// * `full_node` - The `FullNode` to be converted to a `HashNode`.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `HashNode` representing the hash of the input `FullNode`.
+    ///
+    /// # Note
+    ///
+    /// The exact hashing mechanism and handling of `None` values should be
+    /// implemented according to the specific requirements of your trie structure.
+    pub fn full_node_to_hash(&mut self, node: &FullNode, force: bool) -> Node {
+        node.encode(&mut self.rlp_enc);
+        let enc = self.encode_bytes();
+
+        if self.temp.len() > 32 && !force {
+            return Node::FullNode(node.clone());
+        }
+
+        Node::HashNode(self.hash_data(&self.temp))
+    }
+
+    /// Returns the result of the last encoding operation on `self.rlp_enc`.
+    /// This also resets the encoder buffer.
+    ///
+    /// All node encoding must be done like this:
+    ///
+    /// ```
+    /// node.encode(&mut self.rlp_enc);
+    /// let enc = self.encoded_bytes();
+    /// ```
+    ///
+    /// This convention exists because `node.encode` can only be inlined/escape-analyzed when
+    /// called on a concrete receiver type.
+    pub fn encode_bytes(&mut self) -> &[u8] {
+        self.rlp_enc.append_to_bytes(&mut self.temp);
+        self.rlp_enc.reset();
+
+        return &self.temp;
+    }
+
+    /// Hashes the provided data.
+    pub fn hash_data(&self, data: &Vec<u8>) -> HashNode {
+        //FIXME:
+        let mut hasher = Sha3_256::new();
+        hasher.update(data);
+
+        // read hash digest
+        let result = hasher.finalize();
+
+        let hash_node = result.to_vec();
+
+        hash_node
     }
 }
