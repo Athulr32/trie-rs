@@ -3,25 +3,25 @@ use std::collections::HashMap;
 use super::{
     encoding::prefix_len,
     hash::Hasher,
-    node::{FullNode, HashNode, Node, NodeFlag, ShortNode},
+    node::{must_decode_node, FullNode, HashNode, Node, NodeFlag, ShortNode},
     trie_id::trie_id,
-    trie_reader::TrieReader,
+    trie_reader::{new_trie_reader, TrieReader},
     types::{
         Database, Hash, Id, MissingNodeError, Tracer, ADDRESS_LENGTH, EMPTY_ROOT_HASH, HASH_LENGTH,
     },
 };
 
-struct Trie {
+pub struct Trie {
     pub root: Option<Node>,
     pub owner: Hash,
 
-    // Flag whether the commit operation is already performed. If so the
-    // trie is not usable(latest states is invisible).
+    /// Flag whether the commit operation is already performed. If so the
+    /// trie is not usable(latest states is invisible).
     pub committed: Option<bool>,
 
-    // Keep track of the number leaves which have been inserted since the last
-    // hashing operation. This number will not directly map to the number of
-    // actually unhashed nodes.
+    /// Keeps track of the number of leaves which have been inserted since the last
+    /// hashing operation. This number will not directly map to the number of
+    /// actually unhashed nodes.
     pub unhashed: Option<i32>,
 
     // reader is the handler trie can retrieve nodes from.
@@ -298,22 +298,30 @@ impl Trie {
         Err(())
     }
 
-    pub fn resolve(&mut self, node: Node, prefix: Option<Vec<u8>>) -> Result<Node, std::io::Error> {
+    pub fn resolve(&mut self, node: Node, prefix: Vec<u8>) -> Result<Node, ()> {
         if let Node::HashNode(v) = &node {
-            return self.resolve_and_track(v.to_vec(), prefix);
+            return self.resolve_and_track(v.to_vec(), Some(prefix));
         }
 
         Ok(node)
     }
 
+    /// Loads a node from the underlying store with the given node hash and path prefix,
+    /// and tracks the loaded node blob in the tracer as the node's original value.
+    ///
+    /// This function prefers to load the RLP-encoded blob from the database because
+    /// it's easier to decode a node than to encode a node to a blob.
     fn resolve_and_track(
         &mut self,
-        hashNode: HashNode,
+        hash_node: HashNode,
         prefix: Option<Vec<u8>>,
-    ) -> Result<Node, std::io::Error> {
-        // Implementation of resolve_and_track goes here
-        // This is a placeholder and should be replaced with actual logic
-        unimplemented!()
+    ) -> Result<Node, ()> {
+        let mut hash: Hash = [0; HASH_LENGTH];
+        hash.copy_from_slice(&hash_node[..HASH_LENGTH]);
+
+        let blob = self.reader.node(prefix, hash)?;
+
+        Ok(must_decode_node(hash_node, blob))
     }
 
     pub fn new_flag(&self) -> NodeFlag {
@@ -349,35 +357,13 @@ impl Trie {
 
         hash
     }
-}
 
-fn new_trie_reader(
-    state_root: &Hash,
-    owner: &Hash,
-    db: &impl Database,
-) -> Result<TrieReader, MissingNodeError> {
-    if state_root == &[0; HASH_LENGTH] || state_root == &EMPTY_ROOT_HASH {
-        if state_root == &[0; HASH_LENGTH] {
-            eprint!("Zero state root hash!");
-        }
-        return Ok(TrieReader {
-            owner: *owner,
-            reader: None,
-            banned: HashMap::new(),
-        });
-    }
-
-    match db.reader(&state_root) {
-        Ok(reader) => Ok(TrieReader {
-            owner: *owner,
-            reader: Some(reader),
-            banned: HashMap::new(),
-        }),
-        Err(err) => Err(MissingNodeError {
-            owner: *owner,
-            node_hash: *state_root,
-            err: Box::new(err),
-        }),
+    /// Reset resets the states
+    pub fn reset(&mut self) {
+        self.root = None;
+        self.owner = [0; 32];
+        self.unhashed = Some(0);
+        self.committed = Some(false);
     }
 }
 
@@ -391,7 +377,7 @@ fn new_trie_reader(
 /// # Returns
 ///
 /// Returns a Result containing either the new Trie instance or an error.
-pub fn new(id: Id, db: &impl Database) -> Result<Trie, std::io::Error> {
+pub fn new(id: Id, db: &impl Database) -> Result<Trie, ()> {
     let reader = new_trie_reader(&id.state_root, &id.owner, db).unwrap();
 
     let mut trie = Trie {

@@ -17,10 +17,7 @@ pub struct Tracer {
 }
 
 pub trait Reader {
-    // Define the methods that the Reader trait should have
-    // For example:
-    fn read(&self, key: &[u8]) -> Result<Vec<u8>, std::io::Error>;
-    // ... other methods ...
+    fn node(&self, owner: Hash, path: Option<Vec<u8>>, hash: Hash) -> Result<Vec<u8>, ()>;
 }
 
 // ID is the identifier for uniquely identifying a trie.

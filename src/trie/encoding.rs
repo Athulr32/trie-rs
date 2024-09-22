@@ -36,12 +36,42 @@ pub fn hex_to_compact(hex: &[u8]) -> Vec<u8> {
     buf
 }
 
+pub fn compact_to_hex(compact: &[u8]) -> Vec<u8> {
+    if compact.is_empty() {
+        return Vec::new();
+    }
+
+    let mut base = keybytes_to_hex(compact);
+
+    // delete terminator flag
+    if base[0] < 2 {
+        base.pop();
+    }
+
+    // apply odd flag
+    let chop = 2 - (base[0] & 1);
+    base[chop as usize..].to_vec()
+}
+
+fn keybytes_to_hex(str: &[u8]) -> Vec<u8> {
+    let l = str.len() * 2 + 1;
+    let mut nibbles = vec![0u8; l];
+    
+    for (i, &b) in str.iter().enumerate() {
+        nibbles[i * 2] = b / 16;
+        nibbles[i * 2 + 1] = b % 16;
+    }
+    
+    nibbles[l - 1] = 16;
+    nibbles
+}
+
 fn decode_nibbles(nibbles: &[u8], bytes: &mut [u8]) {
     for (bi, chunk) in nibbles.chunks(2).enumerate() {
         bytes[bi] = (chunk[0] << 4) | (chunk[1] & 0xF);
     }
 }
 
-fn has_term(s: &[u8]) -> bool {
+pub fn has_term(s: &[u8]) -> bool {
     s.last().map_or(false, |&b| b == 16)
 }
